@@ -1,1 +1,5 @@
 /cache
+
+# ignore serena runtime data
+cache/
+memories/
