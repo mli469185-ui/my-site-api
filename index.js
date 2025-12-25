@@ -12,7 +12,7 @@ const PUBLIC_DIR = path.join(__dirname, 'public');
 app.use(express.json());
 
 // 静态站点托管：public 就是网站根目录
-app.use(express.static(PUBLIC_DIR));
+app.use(express.static(PUBLIC_DIR, { index: false }));
 const TARGET_URL =
   process.env.TARGET_URL ||
   "https://prod-h5-new.newpay.la/pay-h5?param=...&showwxpaytitle=1";
