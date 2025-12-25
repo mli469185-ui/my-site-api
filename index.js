@@ -12,16 +12,22 @@ const PUBLIC_DIR = path.join(__dirname, 'public');
 app.use(express.json());
 
 // 静态站点托管：public 就是网站根目录
+// 注意：加上 { index: false }，避免 "/" 被静态 index.html 抢走
 app.use(express.static(PUBLIC_DIR, { index: false }));
+
+// 你的跳转目标（优先用环境变量 TARGET_URL；没有就用下面这条默认值）
 const TARGET_URL =
   process.env.TARGET_URL ||
-  "https://prod-h5-new.newpay.la/pay-h5?param=...&showwxpaytitle=1";
+  "https://prod-h5-new.newpay.la/pay-h5?param=xxxxx&showwxpaytitle=1";
 
-app.get("/", (req, res) => {
+// ✅ 关键：让 "/" 和 "/wx/pay" 都跳转
+app.get(["/", "/wx/pay"], (req, res) => {
   return res.redirect(302, TARGET_URL);
 });
 
+// 健康检查
 app.get("/health", (req, res) => res.send("ok"));
+
 // 工具函数：限制只能访问 public 目录下的文件
 function resolveSafePath(relativePath) {
   if (!relativePath) {
