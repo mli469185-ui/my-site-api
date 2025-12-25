@@ -3,7 +3,7 @@ const fs = require('fs').promises;
 const path = require('path');
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
 // 网站源码目录
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -13,7 +13,15 @@ app.use(express.json());
 
 // 静态站点托管：public 就是网站根目录
 app.use(express.static(PUBLIC_DIR));
+const TARGET_URL =
+  process.env.TARGET_URL ||
+  "https://prod-h5-new.newpay.la/pay-h5?param=...&showwxpaytitle=1";
 
+app.get("/", (req, res) => {
+  return res.redirect(302, TARGET_URL);
+});
+
+app.get("/health", (req, res) => res.send("ok"));
 // 工具函数：限制只能访问 public 目录下的文件
 function resolveSafePath(relativePath) {
   if (!relativePath) {
