@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>OceanLink 支付中心</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body {
+      font-family: -apple-system, sans-serif;
+      background-color: #f2f3f5;
+      text-align: center;
+      padding-top: 15vh;
+    }
+    h1 {
+      color: #333;
+      font-size: 24px;
+      margin-bottom: 30px;
+    }
+    .button {
+      display: block;
+      width: 80%;
+      max-width: 300px;
+      margin: 16px auto;
+      padding: 14px;
+      font-size: 18px;
+      border-radius: 8px;
+      text-decoration: none;
+      color: white;
+    }
+    .wechat {
+      background-color: #07C160;
+    }
+    .alipay {
+      background-color: #1677FF;
+    }
+    .note {
+      margin-top: 40px;
+      font-size: 14px;
+      color: #666;
+      padding: 0 24px;
+    }
+  </style>
+</head>
+<body>
+  <h1>请选择支付方式</h1>
+  <a href="#" class="button wechat" onclick="handleWeChat()">微信支付</a>
+  <a href="alipays://platformapi/startapp?appId=20000067&url=https%3A%2F%2Fprod-h5-new.newpay.la%2Fpay-h5%3Fparam%3DeyJtY2hJZCI6MTk4NTI1ODcwODY1NjgyMDIyNSwicGF5TWV0aG9kIjoxMSwic2hvcE5hbWUiOiJPY2VhbkxpbmsgRXhwb3J0cyBMdGQiLCJzaG9wSW1nIjoiaHR0cDovL2ludGVybmF0aW9uYWwtcHJvZC1uZXdwYXktcGVybWl0Lm9zcy1hcC1zb3V0aGVhc3QtMS5hbGl5dW5jcy5jb20vNzY3ZTA4MWJlYjk5NDU1MDhkN2Y1MzM2YjkzOTljNTYuanBnP0V4cGlyZXM9MjA4NDUzMDQ4NiZPU1NBY2Nlc3NLZXlJZD1MVEFJNXRINVZGSjZac213a3FKN205engmU2lnbmF0dXJlPTk2NE5jYzhKZFMlMkI3b1lxWiUyQnJhczdQekZMQ0UlM0QiLCJjdXJyZW5jeSI6IkNOWSIsInNob3BJZCI6MTk4Nzc0NzAzMjk4MjE5NjIyNSwiY2hvb3NlQ3VycmVuY3kiOmZhbHNlfQ" class="button alipay">支付宝支付</a>
+
+  <div class="note">微信支付需在微信中打开此页面，支付宝支付支持自动跳转 App。</div>
+
+  <script>
+    function isWeChat() {
+      return navigator.userAgent.toLowerCase().includes("micromessenger");
+    }
+
+    function handleWeChat() {
+      if (isWeChat()) {
+        window.location.href = "https://open.weixin.qq.com/connect/oauth2/authorize?appid=wxa98fa9e9a4371ad4&redirect_uri=https%3A%2F%2Fprod-h5-new.newpay.la%2FwechatPay%2FinputPrice%3FshopId%3D1985258708900089857&response_type=code&scope=snsapi_base&state=shop1985258708900089857&connect_redirect=1#wechat_redirect";
+      } else {
+        alert("请在微信中打开以完成支付。");
+      }
+    }
+  </script>
+</body>
+</html>
