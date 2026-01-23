@@ -1,130 +1,82 @@
-/**
- * 微信业务域名验证 & 收款入口服务
- * Author: ChatGPT 改进版
- */
-
 const express = require("express");
 const app = express();
+const https = require("https");
 const path = require("path");
 
 const PORT = process.env.PORT || 3000;
 
-// ===== 微信 OAuth 收款入口 =====
-const TARGET_URL =
-  "https://open.weixin.qq.com/connect/oauth2/authorize?appid=wxa98fa9e9a4371ad4&redirect_uri=https%3A%2F%2Fprod-h5-new.newpay.la%2FwechatPay%2FinputPrice%3FshopId%3D1985258708900089857&response_type=code&scope=snsapi_base&state=shop1985258708900089857&connect_redirect=1#wechat_redirect";
-
 // ===== 微信验证文件 =====
-const MP_VERIFY_TOKEN = "bac8086101dafc31d3e972cc0a105335";
-const MP_VERIFY_FILENAME = `MP_verify_${MP_VERIFY_TOKEN}.txt`;
+const VERIFY_TOKEN = "bac8086101dafc31d3e972cc0a105335";
+const VERIFY_FILE = `MP_verify_${VERIFY_TOKEN}.txt`;
 
-// ===== 静态资源目录（可放网站素材、图标等） =====
+// ===== 收款目标链接 =====
+const TARGET_URL = "https://prod-h5-new.newpay.la/wechatPay/inputPrice?shopId=1985258708900089857";
+
+// ===== 静态资源目录 =====
 app.use(express.static(path.join(__dirname, "public"), {
-  maxAge: "1d", // 缓存1天
+  maxAge: "1d",
   etag: false
 }));
 
-// ===== 微信验证文件响应 =====
-app.get(`/${MP_VERIFY_FILENAME}`, (req, res) => {
-  res.type("text/plain").send(MP_VERIFY_TOKEN);
+// ===== 微信验证文件 =====
+app.get(`/${VERIFY_FILE}`, (req, res) => {
+  res.type("text/plain").send(VERIFY_TOKEN);
 });
 
-// ===== 微信跳转防封中转 =====
-app.get("/go", (req, res) => {
-  res.setHeader("Cache-Control", "no-store");
-  res.redirect(302, TARGET_URL);
+// ===== 防封代理跳转（清除 referer + 隐藏真实来源） =====
+app.get("/go", async (req, res) => {
+  try {
+    const headers = {
+      "User-Agent": req.get("User-Agent") || "Mozilla/5.0",
+      "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+      "Referer": "", // 清空来源
+      "Cache-Control": "no-cache"
+    };
+
+    // 测试请求，确保目标可访问
+    https.get(TARGET_URL, { headers }, () => {
+      res.writeHead(302, {
+        "Location": TARGET_URL,
+        "Cache-Control": "no-store",
+        "Referrer-Policy": "no-referrer"
+      });
+      res.end();
+    }).on("error", err => {
+      console.error("跳转失败：", err.message);
+      res.status(502).send("Bad Gateway");
+    });
+  } catch (e) {
+    res.status(500).send("Server Error");
+  }
 });
 
-// ===== 微信支付入口页 =====
+// ===== 微信入口页 =====
 app.get("/wx.1", (req, res) => {
   res.setHeader("Content-Type", "text/html; charset=utf-8");
-  res.setHeader("Cache-Control", "no-store");
-
   res.send(`<!doctype html>
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>微信收款入口</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>微信支付入口</title>
 <style>
-  :root {
-    --green: #07C160;
-    --gray: #666;
-    --bg: #f6f7f8;
-  }
-  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  body {
-    margin: 0;
-    padding: 0;
-    height: 100vh;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: var(--bg);
-  }
-  .container {
-    text-align: center;
-    background: #fff;
-    padding: 28px 32px;
-    border-radius: 20px;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.06);
-    max-width: 300px;
-  }
-  .title {
-    font-size: 16px;
-    font-weight: 600;
-    margin-bottom: 20px;
-    color: #222;
-  }
-  .btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 100px;
-    height: 100px;
-    margin: 0 auto;
-    border-radius: 24px;
-    background: var(--green);
-    text-decoration: none;
-    transition: transform .15s ease;
-  }
-  .btn:active {
-    transform: scale(0.96);
-  }
-  .btn svg {
-    width: 48px;
-    height: 48px;
-    fill: #fff;
-  }
-  .tip {
-    margin-top: 16px;
-    color: var(--gray);
-    font-size: 13px;
-  }
+body { font-family: -apple-system, sans-serif; text-align:center; padding-top:20vh; background:#f6f7f8; }
+a { display:inline-block; background:#07C160; color:#fff; padding:16px 28px; border-radius:8px; text-decoration:none; font-size:16px; }
+a:active { opacity:0.8; }
 </style>
 </head>
 <body>
-  <div class="container">
-    <div class="title">点击进入微信支付</div>
-    <a class="btn" href="/go" rel="noopener">
-      <svg viewBox="0 0 1024 1024"><path d="M383.3 272.6c-177.6 0-321.6 121-321.6 270.3S205.7 813.2 383.3 813.2c49.2 0 95.8-7.2 138.5-20.4l105.7 58.6-29.8-89.7c64.9-51 106.2-127.1 106.2-209.8 0-149.3-144-270.3-321.6-270.3z"/></svg>
-    </a>
-    <div class="tip">请点击上方按钮进入支付</div>
-  </div>
-  <script>
-    document.addEventListener('touchstart', function(){}, {passive: true});
-  </script>
+<h2>点击进入微信支付</h2>
+<a href="/go">进入支付</a>
 </body>
 </html>`);
 });
 
-// ===== 健康检测接口 =====
+// ===== 健康检查 =====
 app.get("/health", (req, res) => res.send("ok"));
 
-// ===== 默认拒绝其他路径 =====
+// ===== 拦截未定义路由 =====
 app.use((req, res) => res.status(403).send("Forbidden"));
 
-// ===== 启动服务 =====
 app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
