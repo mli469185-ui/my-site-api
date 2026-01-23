@@ -3,16 +3,21 @@ const express = require("express");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// ✅ 写死你的 NewPay 链接（不需要环境变量，不会第二天丢）
+// ✅ 写死：微信 OAuth → NewPay H5（高成功率）
 const TARGET_URL =
-  "https://prod-h5-new.newpay.la/pay-h5?param=eyJtY2hJZCI6MTk4NTI1ODcwODY1NjgyMDIyNSwicGF5TWV0aG9kIjoxLCJzaG9wTmFtZSI6Ikdsb2JlVmlzdGEgVHJhZGluZyBDb28iLCJzaG9wSW1nIjoiaHR0cDovL2ludGVybmF0aW9uYWwtcHJvZC1uZXdwYXktcGVybWl0Lm9zcy1hcC1zb3V0aGVhc3QtMS5hbGl5dW5jcy5jb20vZDE1NzgwZmIxMzgzNDc3ZmIxZjg5MWI5ZTZhNmUyYTYucG5nP0V4cGlyZXM9MjA4MzIyMTcyNCZPU1NBY2Nlc3NLZXlJZD1MVEFJNXRINVZGSjZac213a3FKN205engmU2lnbmF0dXJlPTZMc0JOT0FyUUhZQlhQTWJlNHc4VlpWcyUyQkVBJTNEIiwiY3VycmVuY3kiOiJDTlkiLCJzaG9wSWQiOjE5ODgyNTUwMjY2MjY5OTgyNzMsImNob29zZUN1cnJlbmN5IjpmYWxzZX0";
+  "https://open.weixin.qq.com/connect/oauth2/authorize?appid=wxa98fa9e9a4371ad4&redirect_uri=https%3A%2F%2Fprod-h5-new.newpay.la%2FwechatPay%2FinputPrice%3FshopId%3D1985258708900089857&response_type=code&scope=snsapi_base&state=shop1985258708900089857&connect_redirect=1#wechat_redirect";
 
-// ✅ 两个地址都跳转：/ 和 /wx/pay
-app.get(["/", "/wx/pay"], (req, res) => {
+// ✅ 只允许这个路径跳转支付
+app.get("/wx.1", (req, res) => {
   return res.redirect(302, TARGET_URL);
 });
 
-// 健康检查
+// ❌ 其他任何路径：直接拒绝
+app.get("*", (req, res) => {
+  return res.status(403).send("Forbidden");
+});
+
+// 健康检查（可选）
 app.get("/health", (req, res) => res.send("ok"));
 
 app.listen(PORT, () => {
