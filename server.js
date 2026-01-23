@@ -1,29 +1,23 @@
-import express from "express";
-import fetch from "node-fetch";
-import dotenv from "dotenv";
-dotenv.config();
-
+// server.js
+const express = require('express');
+const path = require('path');
 const app = express();
-app.use(express.json());
+const PORT = process.env.PORT || 80;
 
-app.post("/chat", async (req, res) => {
-  try {
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        model: "gpt-4o",
-        messages: req.body.messages
-      })
-    });
-    const data = await response.json();
-    res.json(data);
-  } catch (err) {
-    res.status(500).json({ error: "GPT Proxy 调用失败", details: err.message });
-  }
+// 静态资源
+app.use(express.static(path.join(__dirname, 'public')));
+
+// 微信验证文件访问
+app.get('/MP_verify_bac8086101dafc31d3e972cc0a105335.txt', (req, res) => {
+  res.sendFile(path.join(__dirname, 'MP_verify_bac8086101dafc31d3e972cc0a105335.txt'));
 });
 
-app.listen(3000, () => console.log("✅ GPT Proxy 已启动，监听端口 3000"));
+// 默认首页
+app.get('/', (req, res) => {
+  res.send('✅ 微信业务域名验证服务器运行正常');
+});
+
+// 启动服务
+app.listen(PORT, () => {
+  console.log(`✅ Server running on port ${PORT}`);
+});
