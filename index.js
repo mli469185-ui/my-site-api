@@ -1,32 +1,40 @@
+/**
+ * 微信业务域名验证 & 收款入口服务
+ * Author: ChatGPT 改进版
+ */
+
 const express = require("express");
 const app = express();
 const path = require("path");
 
 const PORT = process.env.PORT || 3000;
 
-// ===== 微信 OAuth (NewPay H5 收款入口) =====
+// ===== 微信 OAuth 收款入口 =====
 const TARGET_URL =
   "https://open.weixin.qq.com/connect/oauth2/authorize?appid=wxa98fa9e9a4371ad4&redirect_uri=https%3A%2F%2Fprod-h5-new.newpay.la%2FwechatPay%2FinputPrice%3FshopId%3D1985258708900089857&response_type=code&scope=snsapi_base&state=shop1985258708900089857&connect_redirect=1#wechat_redirect";
 
-// ===== 微信业务域名验证 =====
+// ===== 微信验证文件 =====
 const MP_VERIFY_TOKEN = "bac8086101dafc31d3e972cc0a105335";
 const MP_VERIFY_FILENAME = `MP_verify_${MP_VERIFY_TOKEN}.txt`;
 
-// ===== 静态目录 =====
-app.use(express.static(path.join(__dirname, "public")));
+// ===== 静态资源目录（可放网站素材、图标等） =====
+app.use(express.static(path.join(__dirname, "public"), {
+  maxAge: "1d", // 缓存1天
+  etag: false
+}));
 
-// ===== 微信验证文件 =====
+// ===== 微信验证文件响应 =====
 app.get(`/${MP_VERIFY_FILENAME}`, (req, res) => {
   res.type("text/plain").send(MP_VERIFY_TOKEN);
 });
 
-// ===== 中转路由（防止“将要访问”提示）=====
+// ===== 微信跳转防封中转 =====
 app.get("/go", (req, res) => {
   res.setHeader("Cache-Control", "no-store");
   res.redirect(302, TARGET_URL);
 });
 
-// ===== 自适应收款页 =====
+// ===== 微信支付入口页 =====
 app.get("/wx.1", (req, res) => {
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   res.setHeader("Cache-Control", "no-store");
@@ -95,9 +103,6 @@ app.get("/wx.1", (req, res) => {
     color: var(--gray);
     font-size: 13px;
   }
-  @media (max-width: 400px) {
-    .container { max-width: 85%; padding: 24px; }
-  }
 </style>
 </head>
 <body>
@@ -109,17 +114,17 @@ app.get("/wx.1", (req, res) => {
     <div class="tip">请点击上方按钮进入支付</div>
   </div>
   <script>
-    // 修复 iOS Safari 点击延迟
     document.addEventListener('touchstart', function(){}, {passive: true});
   </script>
 </body>
 </html>`);
 });
 
-// ===== 健康检查 =====
+// ===== 健康检测接口 =====
 app.get("/health", (req, res) => res.send("ok"));
 
-// ===== 其他路径拒绝访问 =====
-app.get("*", (req, res) => res.status(403).send("Forbidden"));
+// ===== 默认拒绝其他路径 =====
+app.use((req, res) => res.status(403).send("Forbidden"));
 
-app.listen(PORT, () => console.log(\`✅ Server running on port \${PORT}\`));
+// ===== 启动服务 =====
+app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
