@@ -1,0 +1,232 @@
+{
+  "name": "AI_Chat_Root_Workflow (CHAT_EXEC)",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "CHAT_EXEC",
+        "httpMethod": "POST",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "7f6b8c2a-4f1a-4b2b-9d19-4b2c7f0c1c11",
+      "name": "Webhook_Entry",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [300, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "const body = $json.body ?? $json;\n\nfunction genSession() {\n  const t = Date.now().toString(16);\n  const r = Math.random().toString(16).slice(2);\n  return `sess_${t}_${r}`;\n}\n\nconst session_id = String(body.session_id ?? '') || genSession();\nconst user_message = String(body.user_message ?? '');\nconst mode = String(body.mode ?? 'talk');\nconst token = String(body.token ?? '');\nconst intent_id = body.intent_id ?? null;\nconst confirm = body.confirm ?? null;\n\nreturn [{\n  session_id,\n  user_message,\n  mode,\n  token,\n  intent_id,\n  confirm,\n  N_HISTORY: 20\n}];"
+      },
+      "id": "28f9c6fb-2d7d-4a6d-8c17-7c4d3f9c1111",
+      "name": "Normalize_Input",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [520, 300]
+    },
+    {
+      "parameters": {
+        "propertyName": "={{$json.mode}}",
+        "rules": [
+          { "operation": "equal", "value": "talk", "output": 0 },
+          { "operation": "equal", "value": "execute", "output": 1 }
+        ],
+        "fallbackOutput": 2
+      },
+      "id": "5d0b0bb1-9db1-4d8a-9b41-4c1a2d3e1111",
+      "name": "Mode_Switch",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 2,
+      "position": [760, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT role, content, created_at\nFROM conversation_messages\nWHERE session_id = '{{$json.session_id}}'\nORDER BY created_at DESC\nLIMIT {{$json.N_HISTORY}};"
+      },
+      "id": "0b11c4e2-53f4-4d2d-a3ce-9a7a7a7a1111",
+      "name": "DB_Fetch_Conversation",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [1020, 160],
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CREDENTIAL_ID__",
+          "name": "POSTGRES_CREDENTIAL_PLACEHOLDER"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "const norm = $node['Normalize_Input'].json;\nconst rows = $json.rows ?? $json.data ?? $json;\nconst list = Array.isArray(rows) ? rows.slice() : [];\n\nlist.sort((a,b)=> new Date(a.created_at).getTime() - new Date(b.created_at).getTime());\n\nconst systemPrompt = '你是运行在我VPS上的AI助理，具备两阶段能力：对话模式只做推理和讨论，执行模式需要我确认。你默认不执行任何写/删/改系统命令；所有输出以文字建议为主。';\n\nconst messages = [{ role: 'system', content: systemPrompt }];\n\nfor (const row of list) {\n  const r = String(row.role ?? '').toLowerCase();\n  const role = (r === 'user' || r === '用户') ? 'user' : 'assistant';\n  messages.push({ role, content: String(row.content ?? '') });\n}\n\nmessages.push({ role: 'user', content: norm.user_message });\n\nreturn [{\n  session_id: norm.session_id,\n  user_message: norm.user_message,\n  messages\n}];"
+      },
+      "id": "b3f2a1d0-1b2c-4d3e-9f10-123456781111",
+      "name": "Build_LLM_Prompt",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [1260, 160]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.LLM_API_URL || 'https://LLM_API_URL_PLACEHOLDER'}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{'Bearer ' + ($env.LLM_API_KEY || 'LLM_API_KEY_PLACEHOLDER')}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "jsonBody": "={{ { model: ($env.LLM_MODEL_NAME || 'LLM_MODEL_NAME_PLACEHOLDER'), messages: $json.messages } }}"
+      },
+      "id": "c7a0e1f2-8c2f-4e2a-9b0a-abcdefab1111",
+      "name": "LLM_Request",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1500, 160]
+    },
+    {
+      "parameters": {
+        "functionCode": "const norm = $node['Normalize_Input'].json;\nconst raw = $json;\n\nlet reply = '';\nif (raw?.choices?.[0]?.message?.content) reply = raw.choices[0].message.content;\nelse if (raw?.body?.choices?.[0]?.message?.content) reply = raw.body.choices[0].message.content;\nelse reply = typeof raw === 'string' ? raw : JSON.stringify(raw);\n\nfunction esc(s){return String(s ?? '').replace(/'/g, \"''\");}\n\nreturn [{\n  session_id: norm.session_id,\n  user_message: norm.user_message,\n  assistant_reply: reply,\n  _esc_session_id: esc(norm.session_id),\n  _esc_user_message: esc(norm.user_message),\n  _esc_assistant_reply: esc(reply)\n}];"
+      },
+      "id": "d9b8c7a6-5e4d-4c3b-9a10-112233441111",
+      "name": "Extract_LLM_Reply",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [1740, 160]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO conversation_messages (session_id, role, content)\nVALUES ('{{$json._esc_session_id}}', '用户', '{{$json._esc_user_message}}');"
+      },
+      "id": "e1f2a3b4-c5d6-4e7f-8a90-556677881111",
+      "name": "DB_Insert_UserMessage",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [1980, 80],
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CREDENTIAL_ID__",
+          "name": "POSTGRES_CREDENTIAL_PLACEHOLDER"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO conversation_messages (session_id, role, content)\nVALUES ('{{$json._esc_session_id}}', '助理', '{{$json._esc_assistant_reply}}');"
+      },
+      "id": "f9e8d7c6-b5a4-4c3d-9e10-99aabbcc1111",
+      "name": "DB_Insert_AssistantReply",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [1980, 240],
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_CREDENTIAL_ID__",
+          "name": "POSTGRES_CREDENTIAL_PLACEHOLDER"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "return [{\n  success: true,\n  mode: 'talk',\n  session_id: $json.session_id,\n  assistant_reply: $json.assistant_reply,\n  short_history: null,\n  intent_summary: null,\n  intent_id: null,\n  execution_result: null\n}];"
+      },
+      "id": "aa11bb22-cc33-4d44-8e55-667788991111",
+      "name": "Build_Talk_Response",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [2220, 160]
+    },
+    {
+      "parameters": {
+        "functionCode": "const norm = $node['Normalize_Input'].json;\nreturn [{\n  success: true,\n  mode: 'execute',\n  session_id: norm.session_id,\n  assistant_reply: 'COMMAND_PIPELINE_PLACEHOLDER: execute 分支已接通，但目前不执行真实命令。',\n  short_history: null,\n  intent_summary: null,\n  intent_id: norm.intent_id || null,\n  execution_result: 'COMMAND_PIPELINE_PLACEHOLDER'\n}];"
+      },
+      "id": "bb22cc33-dd44-4e55-9f66-778899aa1111",
+      "name": "Execute_Placeholder",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [1020, 460]
+    },
+    {
+      "parameters": {
+        "functionCode": "return [{\n  success: false,\n  mode: 'error',\n  session_id: $json.session_id,\n  assistant_reply: '不支持的 mode（仅支持 talk/execute）',\n  short_history: null,\n  intent_summary: null,\n  intent_id: null,\n  execution_result: null\n}];"
+      },
+      "id": "cc33dd44-ee55-4f66-8a77-8899aabb1111",
+      "name": "Unsupported_Mode",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [1020, 620]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{$json}}"
+      },
+      "id": "ddee1122-3344-4f55-8899-aabbccdd1111",
+      "name": "Respond_JSON",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [2460, 300]
+    }
+  ],
+  "connections": {
+    "Webhook_Entry": {
+      "main": [[{ "node": "Normalize_Input", "type": "main", "index": 0 }]]
+    },
+    "Normalize_Input": {
+      "main": [[{ "node": "Mode_Switch", "type": "main", "index": 0 }]]
+    },
+    "Mode_Switch": {
+      "main": [
+        [{ "node": "DB_Fetch_Conversation", "type": "main", "index": 0 }],
+        [{ "node": "Execute_Placeholder", "type": "main", "index": 0 }],
+        [{ "node": "Unsupported_Mode", "type": "main", "index": 0 }]
+      ]
+    },
+    "DB_Fetch_Conversation": {
+      "main": [[{ "node": "Build_LLM_Prompt", "type": "main", "index": 0 }]]
+    },
+    "Build_LLM_Prompt": {
+      "main": [[{ "node": "LLM_Request", "type": "main", "index": 0 }]]
+    },
+    "LLM_Request": {
+      "main": [[{ "node": "Extract_LLM_Reply", "type": "main", "index": 0 }]]
+    },
+    "Extract_LLM_Reply": {
+      "main": [[
+        { "node": "DB_Insert_UserMessage", "type": "main", "index": 0 },
+        { "node": "DB_Insert_AssistantReply", "type": "main", "index": 0 },
+        { "node": "Build_Talk_Response", "type": "main", "index": 0 }
+      ]]
+    },
+    "DB_Insert_UserMessage": {
+      "main": [[{ "node": "Respond_JSON", "type": "main", "index": 0 }]]
+    },
+    "DB_Insert_AssistantReply": {
+      "main": [[{ "node": "Respond_JSON", "type": "main", "index": 0 }]]
+    },
+    "Build_Talk_Response": {
+      "main": [[{ "node": "Respond_JSON", "type": "main", "index": 0 }]]
+    },
+    "Execute_Placeholder": {
+      "main": [[{ "node": "Respond_JSON", "type": "main", "index": 0 }]]
+    },
+    "Unsupported_Mode": {
+      "main": [[{ "node": "Respond_JSON", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "versionId": "1"
+}
+```0{ "name": "AI_Chat_Root_Workflow_CHAT_EXEC", "nodes": [ { "parameters": { "path": "CHAT_EXEC", "httpMethod": "POST", "responseMode": "responseNode", "options": {} }, "id": "1", "name": "Webhook_Entry", "type": "n8n-nodes-base.webhook", "typeVersion": 2, "position": [ 300, 300 ] }, { "parameters": { "functionCode": "const body = $json.body ?? $json;\nfunction genSession(){\n  const t = Date.now().toString(16);\n  const r = Math.random().toString(16).slice(2);\n  return sess_${t}_${r};\n}\nconst session_id = String(body.session_id ?? '') || genSession();\nreturn [{\n  token: String(body.token ?? ''),\n  session_id,\n  user_message: String(body.user_message ?? ''),\n  mode: String(body.mode ?? 'talk'),\n  intent_id: body.intent_id ?? '',\n  confirm: String(body.confirm ?? ''),\n  N_HISTORY: 20,\n  EXPECT_CONFIRM: 'EXECUTE_NOW'\n}];" }, "id": "2", "name": "Normalize_Input", "type": "n8n-nodes-base.function", "typeVersion": 2, "position": [ 520, 300 ] }, { "parameters": { "propertyName": "={{$json.mode}}", "rules": [ { "operation": "equal", "value": "talk", "output": 0 }, { "operation": "equal", "value": "execute", "output": 1 } ], "fallbackOutput": 2 }, "id": "3", "name": "Mode_Switch", "type": "n8n-nodes-base.switch", "typeVersion": 2, "position": [ 760, 300 ] }, { "parameters": { "operation": "executeQuery", "query": "CREATE TABLE IF NOT EXISTS conversation_messages (\n  id BIGSERIAL PRIMARY KEY,\n  session_id TEXT NOT NULL,\n  role TEXT NOT NULL,\n  content TEXT NOT NULL,\n  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()\n);\nCREATE INDEX IF NOT EXISTS idx_conversation_session_created ON conversation_messages(session_id, created_at DESC);\n\nCREATE TABLE IF NOT EXISTS intents (\n  intent_id TEXT PRIMARY KEY,\n  session_id TEXT NOT NULL,\n  summary TEXT NOT NULL,\n  status TEXT NOT NULL DEFAULT 'draft',\n  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),\n  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()\n);\nCREATE INDEX IF NOT EXISTS idx_intents_session_updated ON intents(session_id, updated_at DESC);" }, "id": "4", "name": "PG_Init_Tables_Talk", "type": "n8n-nodes-base.postgres", "typeVersion": 2, "position": [ 1020, 140 ] }, { "parameters": { "operation": "executeQuery", "query": "SELECT role, content, created_at\nFROM conversation_messages\nWHERE session_id = '{{$node.Normalize_Input.json.session_id}}'\nORDER BY created_at DESC\nLIMIT {{$node.Normalize_Input.json.N_HISTORY}};" }, "id": "5", "name": "DB_Fetch_Conversation", "type": "n8n-nodes-base.postgres", "typeVersion": 2, "position": [ 1240, 140 ] }, { "parameters": { "functionCode": "const norm = $node['Normalize_Input'].json;\nconst rows = $json.rows ?? $json.data ?? $json;\nconst list = Array.isArray(rows) ? rows.slice() : [];\nlist.sort((a,b)=> new Date(a.created_at).getTime() - new Date(b.created_at).getTime());\n\nconst systemPrompt = '你是运行在我VPS上的AI助理，具备两阶段能力：对话模式只做推理和讨论，执行模式需要我确认。你默认不执行任何写/删/改系统命令；所有输出以文字建议为主。';\n\nconst messages = [{ role: 'system', content: systemPrompt }];\nfor (const row of list) {\n  const r = String(row.role ?? '').toLowerCase();\n  const role = (r === 'user' || r === '用户') ? 'user' : 'assistant';\n  messages.push({ role, content: String(row.content ?? '') });\n}\nmessages.push({ role: 'user', content: norm.user_message });\n\nreturn [{\n  session_id: norm.session_id,\n  user_message: norm.user_message,\n  messages\n}];" }, "id": "6", "name": "Build_LLM_Prompt", "type": "n8n-nodes-base.function", "typeVersion": 2, "position": [ 1460, 140 ] }, { "parameters": { "method": "POST", "url": "https://LLM_API_URL_PLACEHOLDER", "sendHeaders": true, "headerParameters": { "parameters": [ { "name": "Authorization", "value": "Bearer LLM_API_KEY_PLACEHOLDER" }, { "name": "Content-Type", "value": "application/json" } ] }, "sendBody": true, "contentType": "json", "jsonBody": "={{ { model: 'LLM_MODEL_NAME_PLACEHOLDER', messages: $json.messages } }}" }, "id": "7", "name": "LLM_Request", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4, "position": [ 1680, 140 ] }, { "parameters": { "functionCode": "const norm = $node['Normalize_Input'].json;\nconst raw = $json;\nlet reply = '';\nif (raw?.choices?.[0]?.message?.content) reply = raw.choices[0].message.content;\nelse if (raw?.body?.choices?.[0]?.message?.content) reply = raw.body.choices[0].message.content;\nelse reply = typeof raw === 'string' ? raw : JSON.stringify(raw);\n\nfunction esc(s){return String(s ?? '').replace(/'/g, "''");}\n\nreturn [{\n  session_id: norm.session_id,\n  user_message: norm.user_message,\n  assistant_reply: reply,\n  _esc_session_id: esc(norm.session_id),\n  _esc_user_message: esc(norm.user_message),\n  _esc_assistant_reply: esc(reply)\n}];" }, "id": "8", "name": "Extract_LLM_Reply", "type": "n8n-nodes-base.function", "typeVersion": 2, "position": [ 1900, 140 ] }, { "parameters": { "operation": "executeQuery", "query": "INSERT INTO conversation_messages (session_id, role, content)\nVALUES ('{{$json._esc_session_id}}', '用户', '{{$json._esc_user_message}}');" }, "id": "9", "name": "DB_Insert_UserMessage", "type": "n8n-nodes-base.postgres", "typeVersion": 2, "position": [ 2120, 60 ] }, { "parameters": { "operation": "executeQuery", "query": "INSERT INTO conversation_messages (session_id, role, content)\nVALUES ('{{$json._esc_session_id}}', '助理', '{{$json.esc_assistant_reply}}');" }, "id": "10", "name": "DB_Insert_AssistantReply", "type": "n8n-nodes-base.postgres", "typeVersion": 2, "position": [ 2340, 60 ] }, { "parameters": { "conditions": { "string": [ { "value1": "={{$node.Normalize_Input.json.user_message}}", "operation": "contains", "value2": "整理" } ] } }, "id": "11", "name": "Check_Intent_Trigger", "type": "n8n-nodes-base.if", "typeVersion": 2, "position": [ 2120, 220 ] }, { "parameters": { "functionCode": "function genID(){ return 'intent' + Math.random().toString(36).slice(2,10);} \nreturn [{\n  intent_id: genID(),\n  is_new_intent: true\n}];" }, "id": "12", "name": "Generate_Intent_ID", "type": "n8n-nodes-base.function", "typeVersion": 2, "position": [ 2340, 220 ] }, { "parameters": { "operation": "executeQuery", "query": "INSERT INTO intents (intent_id, session_id, summary, status)\nVALUES (\n  '{{$json.intent_id}}',\n  '{{$node.Normalize_Input.json.session_id}}',\n  'AI草稿',\n  'draft'\n)\nON CONFLICT(intent_id) DO UPDATE SET\n  summary = EXCLUDED.summary,\n  status = EXCLUDED.status,\n  updated_at = NOW();" }, "id": "13", "name": "Create_Intent_DB", "type": "n8n-nodes-base.postgres", "typeVersion": 2, "position": [ 2560, 220 ] }, { "parameters": { "operation": "executeQuery", "query": "UPDATE intents\nSET summary='AI更新后的草稿', status='draft', updated_at=NOW()\nWHERE session_id='{{$node.Normalize_Input.json.session_id}}';" }, "id": "14", "name": "Update_Intent_DB", "type": "n8n-nodes-base.postgres", "typeVersion": 2, "position": [ 2560, 340 ] }, { "parameters": { "functionCode": "const intent_id = $node['Generate_Intent_ID']?.json?.intent_id ?? null;\nreturn [{\n  _intent_id: intent_id,\n  _intent_summary: '大纲占位描述'\n}];" }, "id": "15", "name": "Intent_Output", "type": "n8n-nodes-base.function", "typeVersion": 2, "position": [ 2780, 220 ] }, { "parameters": { "functionCode": "const intent_id = $node['Intent_Output']?.json?._intent_id ?? null;\nconst intent_summary = $node['Intent_Output']?.json?._intent_summary ?? null;\nreturn [{\n  success: true,\n  mode: 'talk',\n  session_id: $node.Normalize_Input.json.session_id,\n  assistant_reply: $node.Extract_LLM_Reply.json.assistant_reply,\n  short_history: null,\n  intent_id,\n  intent_summary,\n  execution_result: null\n}];" }, "id": "16", "name": "Build_Talk_Response", "type": "n8n-nodes-base.function", "typeVersion": 2, "position": [ 3000, 140 ] }, { "parameters": { "operation": "executeQuery", "query": "CREATE TABLE IF NOT EXISTS conversation_messages (\n  id BIGSERIAL PRIMARY KEY,\n  session_id TEXT NOT NULL,\n  role TEXT NOT NULL,\n  content TEXT NOT NULL,\n  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()\n);\nCREATE INDEX IF NOT EXISTS idx_conversation_session_created ON conversation_messages(session_id, created_at DESC);\n\nCREATE TABLE IF NOT EXISTS intents (\n  intent_id TEXT PRIMARY KEY,\n  session_id TEXT NOT NULL,\n  summary TEXT NOT NULL,\n  status TEXT NOT NULL DEFAULT 'draft',\n  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),\n  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()\n);\nCREATE INDEX IF NOT EXISTS idx_intents_session_updated ON intents(session_id, updated_at DESC);" }, "id": "17", "name": "PG_Init_Tables_Execute", "type": "n8n-nodes-base.postgres", "typeVersion": 2, "position": [ 1020, 520 ] }, { "parameters": { "conditions": { "string": [ { "value1": "={{$node.Normalize_Input.json.confirm}}", "operation": "equal", "value2": "EXECUTE_NOW" } ] } }, "id": "18", "name": "Check_Execute_Confirm", "type": "n8n-nodes-base.if", "typeVersion": 2, "position": [ 1240, 520 ] }, { "parameters": { "conditions": { "string": [ { "value1": "={{$node.Normalize_Input.json.intent_id}}", "operation": "notEqual", "value2": "" } ] } }, "id": "19", "name": "Check_Intent_ID_Provided", "type": "n8n-nodes-base.if", "typeVersion": 2, "position": [ 1460, 520 ] }, { "parameters": { "operation": "executeQuery", "query": "SELECT * FROM intents WHERE intent_id='{{$node.Normalize_Input.json.intent_id}}' LIMIT 1;" }, "id": "20", "name": "DB_Fetch_Intent", "type": "n8n-nodes-base.postgres", "typeVersion": 2, "position": [ 1680, 520 ] }, { "parameters": { "conditions": { "string": [ { "value1": "={{$json.rows && $json.rows[0] ? $json.rows[0].status : ''}}", "operation": "equal", "value2": "ready" } ] } }, "id": "21", "name": "Check_Intent_Status", "type": "n8n-nodes-base.if", "typeVersion": 2, "position": [ 1900, 520 ] }, { "parameters": { "functionCode": "return [{ execution_result: 'COMMAND_PIPELINE_PLACEHOLDER' }];" }, "id": "22", "name": "Execute_Pipeline_Placeholder", "type": "n8n-nodes-base.function", "typeVersion": 2, "position": [ 2120, 460 ] }, { "parameters": { "operation": "executeQuery", "query": "UPDATE intents SET stat
